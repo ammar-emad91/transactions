@@ -1,11 +1,11 @@
 window.onerror=function(m,u,l){var a=document.getElementById('app');if(a){var p=document.createElement('p');p.style.cssText='color:#ff7b72;direction:ltr;text-align:left;padding:8px';p.textContent='خطأ: '+m+' (سطر '+l+')';a.append(p);}};
+const pad=n=>String(n).padStart(2,'0');
 const START=199000, PER_DAY=365, D0=Date.UTC(2023,0,1), D1=Date.UTC(2028,11,31);
 const MN=['January','February','March','April','May','June','July','August','September','October','November','December'];
 const $app=document.getElementById('app');
 let sb=null, session=null, names=Array.from({length:10},(_,i)=>'الشركة '+(i+1));
 let sel=null, dateVal=clampToday(), result=null, busy=false, tab='main', histRows=[], timer=null;
 
-const pad=n=>String(n).padStart(2,'0');
 function h(tag,props={},...kids){const e=document.createElement(tag);
   for(const k in props){if(k==='class')e.className=props[k];else if(k.startsWith('on'))e[k]=props[k];else e.setAttribute(k,props[k]);}
   kids.flat().forEach(c=>e.append(c instanceof Node?c:document.createTextNode(c)));return e;}
