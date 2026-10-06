@@ -34,6 +34,10 @@ select option{background:var(--card);color:#fff}
 <body>
 <div class="wrap" id="app"><p class="msg">جارٍ التحميل…</p></div>
 <script>
+window.addEventListener('error',e=>{document.getElementById('app').textContent='خطأ: '+e.message;});
+window.addEventListener('unhandledrejection',e=>{document.getElementById('app').textContent='خطأ: '+((e.reason&&e.reason.message)||e.reason);});
+window.addEventListener('load',()=>{if(typeof supabase==='undefined')document.getElementById('app').textContent='تعذّر تحميل مكتبة Supabase، جرّب شبكة أخرى أو عطّل مانع الإعلانات';});
+</script>
 /* ====== الصق إعدادات Supabase هنا (انظر ملف التعليمات) ====== */
 const SUPABASE_URL = "https://zfvofdydbenhcmavpqyx.supabase.co";        // مثل https://xxxx.supabase.co
 const SUPABASE_KEY = "sb_publishable_y2eDybOocIrqgLmLyJFYLg_6La-QDV2";        // مفتاح anon / publishable
