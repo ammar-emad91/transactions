@@ -1,6 +1,11 @@
 window.onerror=function(m,u,l){var a=document.getElementById('app');if(a){var p=document.createElement('p');p.style.cssText='color:#ff7b72;direction:ltr;text-align:left;padding:8px';p.textContent='خطأ: '+m+' (سطر '+l+')';a.append(p);}};
 const pad=n=>String(n).padStart(2,'0');
-const START=199000, PER_DAY=365, D0=Date.UTC(2023,0,1), D1=Date.UTC(2028,11,31);
+const PER_DAY=365, D0=Date.UTC(2025,0,1);
+let scfg=[{prefix:'',s:199000,e:999999}].concat(Array.from({length:9},()=>({prefix:'',s:120000,e:999999})));
+const maxT=c=>D0+(Math.floor((scfg[c].e-scfg[c].s+1)/PER_DAY)-1)*864e5;
+const maxAll=()=>Math.max(...scfg.map((_,i)=>maxT(i)));
+function fmtT(t){const d=new Date(t);return d.getUTCFullYear()+'-'+pad(d.getUTCMonth()+1)+'-'+pad(d.getUTCDate());}
+function clampStr(str,c){const [y,m,d]=str.split('-').map(Number);let t=Date.UTC(y,m-1,d);t=Math.min(Math.max(t,D0),c===null?maxAll():maxT(c));return fmtT(t);}
 const MN=['January','February','March','April','May','June','July','August','September','October','November','December'];
 const $app=document.getElementById('app');
 let sb=null, session=null, names=Array.from({length:10},(_,i)=>'الشركة '+(i+1));
@@ -10,18 +15,18 @@ let sel=null, dateVal=clampToday(), result=null, busy=false, tab='main', histRow
 function h(tag,props={},...kids){const e=document.createElement(tag);
   for(const k in props){if(k==='class')e.className=props[k];else if(k.startsWith('on'))e[k]=props[k];else e.setAttribute(k,props[k]);}
   kids.flat().forEach(c=>e.append(c instanceof Node?c:document.createTextNode(c)));return e;}
-function clampToday(){const n=new Date();let t=Date.UTC(n.getFullYear(),n.getMonth(),n.getDate());
-  t=Math.min(Math.max(t,D0),D1);const d=new Date(t);return d.getUTCFullYear()+'-'+pad(d.getUTCMonth()+1)+'-'+pad(d.getUTCDate());}
-const dateOf=i=>{const d=new Date(D0+i*864e5);return d.getUTCFullYear()+'-'+pad(d.getUTCMonth()+1)+'-'+pad(d.getUTCDate());};
+function clampToday(){const n=new Date();return clampStr(n.getFullYear()+'-'+pad(n.getMonth()+1)+'-'+pad(n.getDate()),null);}
 
 async function loadNames(){
   const {data}=await sb.from('config').select('names').eq('id',1).maybeSingle();
   if(data&&Array.isArray(data.names)&&data.names.length===10) names=data.names;
+  const {data:sc}=await sb.from('serial_config').select('company,prefix,start_num,end_num').order('company');
+  if(sc&&sc.length===10) scfg=sc.map(r=>({prefix:r.prefix||'',s:r.start_num,e:r.end_num}));
 }
 async function loadHistory(){
   if(sel===null||!session){histRows=[];paintHistory();return;}
   const c=sel;
-  const {data,error}=await sb.from('allocations').select('num,alloc_date,username').eq('company',c).order('num',{ascending:false}).limit(1000);
+  const {data,error}=await sb.from('allocations').select('serial,num,alloc_date,username').eq('company',c).order('num',{ascending:false}).limit(1000);
   if(c!==sel) return;
   histRows=error?[]:data; paintHistory();
 }
@@ -31,16 +36,16 @@ function paintHistory(){
   if(!histRows.length){box.append(h('p',{class:'msg'},'لا توجد أرقام محفوظة لهذه الشركة بعد'));return;}
   const by={}; histRows.forEach(r=>{(by[r.alloc_date]=by[r.alloc_date]||[]).push(r);});
   Object.keys(by).sort().reverse().slice(0,150).forEach(d=>{const it=by[d].sort((a,b)=>a.num-b.num);
-    box.append(h('details',{class:'day'},h('summary',{},d+' — '+it.length+' رقم — آخر رقم '+it[it.length-1].num),
-      h('div',{class:'nums'},it.map(r=>r.num+' ('+(r.username||'-')+')').join('   '))));});
+    box.append(h('details',{class:'day'},h('summary',{},d+' — '+it.length+' تسلسل — آخر تسلسل '+(it[it.length-1].serial||it[it.length-1].num)),
+      h('div',{class:'nums'},it.map(r=>(r.serial||r.num)+' ('+(r.username||'-')+')').join('   '))));});
 }
 async function doLookup(){
-  const v=Number(document.getElementById('lk').value), out=document.getElementById('lkout');
-  if(!Number.isInteger(v)||v<START||v>999999){out.className='msg err';out.textContent='أدخل رقماً بين 199000 و 999999';return;}
-  if(sel===null){out.className='msg err';out.textContent='اختر الشركة أولاً';return;}
-  const idx=Math.floor((v-START)/PER_DAY); if(idx>2191){out.className='msg err';out.textContent='الرقم خارج نطاق التواريخ';return;}
-  const {data}=await sb.from('allocations').select('num').eq('company',sel).eq('num',v).maybeSingle();
-  out.className='msg'; out.textContent=(data?'✔ الرقم مستخدم':'○ الرقم غير مستخدم')+' — تاريخه '+dateOf(idx)+' — '+names[sel];
+  const v=document.getElementById('lk').value.trim().toUpperCase().replace(/\s+/g,''), out=document.getElementById('lkout');
+  if(!v){out.className='msg err';out.textContent='أدخل التسلسل';return;}
+  const {data,error}=await sb.from('allocations').select('serial,company,alloc_date,username').eq('serial',v).maybeSingle();
+  if(error){out.className='msg err';out.textContent='تعذّر التحقق';return;}
+  out.className='msg';
+  out.textContent=data?('✔ مستخدم — '+(names[data.company]||'')+' — '+data.alloc_date+' — بواسطة '+(data.username||'-')):'○ غير مستخدم';
 }
 async function api(fn,args){
   const {data,error}=await sb.rpc(fn,args);
@@ -52,7 +57,7 @@ async function getNumber(){
   if(busy||sel===null||!dateVal||!me) return; busy=true; result={wait:true}; paintResult();
   const r=await api('allocate_number',{...cred(),p_company:sel,p_date:dateVal});
   if(!r.ok){result={err:r.error};if(/انتهت الجلسة/.test(r.error||'')){me=null;try{sessionStorage.removeItem('tx_me');}catch(e){}}}
-  else{result={num:r.num,date:dateVal,co:sel};loadHistory();}
+  else{result={serial:r.serial,date:dateVal,co:sel};loadHistory();}
   busy=false; if(me)paintResult(); else render();
 }
 function paintResult(){
@@ -61,18 +66,19 @@ function paintResult(){
   if(!result) return;
   if(result.wait) box.append(h('p',{class:'msg'},'جارٍ الحجز…'));
   else if(result.err) box.append(h('p',{class:'msg err'},result.err));
-  else box.append(h('div',{class:'big'},String(result.num)),h('p',{class:'msg'},names[result.co]+' — '+result.date),
-    h('button',{class:'btn ghost',style:'display:block;margin:8px auto 0',onclick:()=>{try{navigator.clipboard.writeText(String(result.num));}catch(e){}}},'نسخ الرقم'));
+  else box.append(h('div',{class:'big'},String(result.serial)),h('p',{class:'msg'},names[result.co]+' — '+result.date),
+    h('button',{class:'btn ghost',style:'display:block;margin:8px auto 0',onclick:()=>{try{navigator.clipboard.writeText(String(result.serial));}catch(e){}}},'نسخ التسلسل'));
 }
 function dateSelects(){
   const [y,m,d]=dateVal.split('-').map(Number); const dim=new Date(Date.UTC(y,m,0)).getUTCDate();
-  const upd=(yy,mm,dd)=>{dd=Math.min(dd,new Date(Date.UTC(yy,mm,0)).getUTCDate());dateVal=yy+'-'+pad(mm)+'-'+pad(dd);result=null;render();};
+  const upd=(yy,mm,dd)=>{dd=Math.min(dd,new Date(Date.UTC(yy,mm,0)).getUTCDate());dateVal=clampStr(yy+'-'+pad(mm)+'-'+pad(dd),sel);result=null;render();};
   const mk=(label,opts,val,fn)=>{const s=h('select',{});opts.forEach(([v,t])=>{const o=h('option',{value:v},t);if(v===val)o.selected=true;s.append(o);});
     s.onchange=()=>fn(+s.value);return h('div',{},h('label',{},label),s);};
-  return h('div',{class:'three'},
-    mk('السنة',[2023,2024,2025,2026,2027,2028].map(v=>[v,String(v)]),y,v=>upd(v,m,d)),
+  return h('div',{},h('div',{class:'three'},
+    mk('السنة',Array.from({length:new Date(sel===null?maxAll():maxT(sel)).getUTCFullYear()-2024},(_,i)=>2025+i).map(v=>[v,String(v)]),y,v=>upd(v,m,d)),
     mk('الشهر',MN.map((t,i)=>[i+1,(i+1)+' - '+t]),m,v=>upd(y,v,d)),
-    mk('اليوم',Array.from({length:dim},(_,i)=>[i+1,String(i+1)]),d,v=>upd(y,m,v)));
+    mk('اليوم',Array.from({length:dim},(_,i)=>[i+1,String(i+1)]),d,v=>upd(y,m,v))),
+    h('p',{class:'msg'},sel===null?'اختر الشركة لمعرفة آخر تاريخ متاح':'آخر تاريخ متاح لهذه الشركة: '+fmtT(maxT(sel))));
 }
 function setMe(username,role,pass){
   me={username,role,pass};try{sessionStorage.setItem('tx_me',JSON.stringify(me));}catch(e){}
@@ -113,7 +119,7 @@ async function loadActivity(){
   const r=await api('get_activity',cred()); actRows=r.ok?r.rows:[]; paintActivity();
 }
 function actText(r){
-  if(r.action==='allocate') return 'حجز الرقم '+r.num+' — '+(names[r.company]||('شركة '+(r.company+1)))+' — '+r.alloc_date;
+  if(r.action==='allocate') return 'حجز التسلسل '+(r.serial||r.num)+' — '+(names[r.company]||('شركة '+(r.company+1)))+' — '+r.alloc_date;
   if(r.action==='login') return 'تسجيل دخول';
   if(r.action==='register') return 'إنشاء حساب جديد';
   if(r.action==='password') return 'غيّر رمزه';
@@ -154,6 +160,7 @@ function settingsView(){
   return h('div',{},
     h('div',{class:'card'},h('h2',{},'أسماء الشركات'),...ins.flatMap(e=>[e,h('div',{class:'gap'})]),h('button',{class:'btn',onclick:saveNames},'حفظ الأسماء'),m),
     h('div',{class:'card'},h('h2',{},'المستخدمون'),h('div',{id:'ulist'})),
+    h('div',{class:'card'},h('h2',{},'صيغة تسلسل كل شركة'),...names.map((n,i)=>h('p',{class:'msg',style:'direction:ltr'},n+': '+(scfg[i].prefix?scfg[i].prefix+' + ':'')+scfg[i].s+' → '+scfg[i].e+'  (حتى '+fmtT(maxT(i))+')'))),
     passwordCard());
 }
 function passwordCard(){
@@ -165,8 +172,8 @@ function passwordCard(){
 }
 function mainView(){
   const grid=h('div',{class:'grid'});
-  names.forEach((n,i)=>grid.append(h('button',{class:'co'+(sel===i?' on':''),onclick:()=>{sel=i;result=null;histRows=[];loadHistory();render();}},n)));
-  const lk=h('input',{id:'lk',type:'number',inputmode:'numeric',placeholder:'تحقق من رقم (199000-999999)'});
+  names.forEach((n,i)=>grid.append(h('button',{class:'co'+(sel===i?' on':''),onclick:()=>{sel=i;dateVal=clampStr(dateVal,i);result=null;histRows=[];loadHistory();render();}},n)));
+  const lk=h('input',{id:'lk',type:'text',autocapitalize:'characters',placeholder:'تحقق من تسلسل (مثال: AB123456)'});
   return h('div',{},
     h('div',{class:'card'},h('h2',{},'1) اختر الشركة'),grid),
     h('div',{class:'card'},h('h2',{},'2) اختر التاريخ'),dateSelects(),h('div',{class:'gap'}),
